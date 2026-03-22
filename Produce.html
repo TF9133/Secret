@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secret 圖片產生器</title>
+    <style>
+        body {
+            font-family: 'PingFang HK', 'Microsoft JhengHei', sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+            margin: 0;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 40px;
+            max-width: 1200px;
+            width: 100%;
+        }
+        .editor-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .preview-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 { margin-top: 0; color: #3f5984; }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        label { font-weight: bold; }
+        input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        
+        /* 進階設定區塊樣式 */
+        .advanced-panel {
+            display: none; /* 預設隱藏 */
+            background-color: #f8fafc;
+            padding: 15px;
+            border: 2px dashed #94a3b8;
+            border-radius: 8px;
+            margin-top: -10px;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .advanced-panel p { margin: 0 0 12px 0; color: #e11d48; font-weight: bold; font-size: 15px; }
+        .radio-group { margin-bottom: 15px; display: flex; gap: 20px; }
+        .radio-group label { font-weight: normal; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .btn-preview { background-color: #e2e8f0; color: #333; }
+        .btn-preview:hover { background-color: #cbd5e1; }
+        .btn-download { background-color: #3f5984; color: white; }
+        .btn-download:hover { background-color: #2c3f61; }
+        canvas {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        @media (max-width: 768px) {
+            .container { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="editor-panel">
+        <h2>圖片產生器</h2>
+        
+        <div class="input-group">
+            <label for="numInput">左上角編號</label>
+            <input type="text" id="numInput" placeholder="例如: 001" value="001" oninput="drawCanvas()">
+        </div>
+        
+        <div class="input-group">
+            <label for="tagInput">右上角字眼</label>
+            <input type="text" id="tagInput" placeholder="例如: 投稿" value="投稿" oninput="drawCanvas()">
+        </div>
+        
+        <div class="input-group">
+            <label for="titleInput">正中標題</label>
+            <input type="text" id="titleInput" placeholder="例如: 新增標題" value="新增標題" oninput="checkTitleLength()">
+        </div>
+
+        <div id="advancedPanel" class="advanced-panel">
+            <p>💡 偵測到標題較長，排版設定：</p>
+            
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="layoutMode" value="1" checked onchange="drawCanvas()"> 維持單行
+                </label>
+                <label>
+                    <input type="radio" name="layoutMode" value="2" onchange="drawCanvas()"> 分成兩行
+                </label>
+            </div>
+
+            <div class="input-group">
+                <label for="fontSizeSlider">微調文字大小: <span id="fontSizeVal">140</span>px</label>
+                <input type="range" id="fontSizeSlider" min="60" max="180" value="140" oninput="updateSliderAndDraw()">
+            </div>
+        </div>
+        
+        <div class="input-group">
+            <label for="yearInput">左下年份</label>
+            <input type="text" id="yearInput" placeholder="例如: 2026" value="2026" oninput="drawCanvas()">
+        </div>
+
+        <div class="btn-group">
+            <button class="btn-preview" onclick="drawCanvas()">🔄 強制更新預覽</button>
+            <button class="btn-download" onclick="downloadImage()">⬇️ 下載圖片</button>
+        </div>
+    </div>
+
+    <div class="preview-panel">
+        <h2>試看預覽</h2>
+        <canvas id="posterCanvas" width="1080" height="1440"></canvas>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('posterCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const COLOR_BG = '#F3EFE9';
+    const COLOR_BLUE = '#3C5784';
+    const COLOR_WHITE = '#FFFFFF';
+
+    // 檢測標題長度控制面板顯示
+    function checkTitleLength() {
+        const titleText = document.getElementById('titleInput').value;
+        const panel = document.getElementById('advancedPanel');
+        
+        if (titleText.length > 5) {
+            panel.style.display = 'block';
+        } else {
+            panel.style.display = 'none';
+            // 隱藏時重置為預設狀態，避免影響少於5個字的排版
+            document.querySelector('input[name="layoutMode"][value="1"]').checked = true;
+            document.getElementById('fontSizeSlider').value = 140;
+            document.getElementById('fontSizeVal').innerText = '140';
+        }
+        drawCanvas(); // 即時重繪
+    }
+
+    // 更新滑桿數字顯示並重繪
+    function updateSliderAndDraw() {
+        const sliderVal = document.getElementById('fontSizeSlider').value;
+        document.getElementById('fontSizeVal').innerText = sliderVal;
+        drawCanvas();
+    }
+
+    // 圓角矩形繪製函數
+    function drawRoundRect(ctx, x, y, width, height, radius) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function drawCanvas() {
+        // 獲取所有輸入值
+        const numText = document.getElementById('numInput').value;
+        const tagText = document.getElementById('tagInput').value;
+        const titleText = document.getElementById('titleInput').value;
+        const yearText = document.getElementById('yearInput').value;
+        
+        // 判斷是否需要讀取進階設定
+        let titleFontSize = 120; // 預設 140px
+        let layoutMode = '1';    // 預設單行
+        if (titleText.length > 5) {
+            titleFontSize = parseInt(document.getElementById('fontSizeSlider').value);
+            layoutMode = document.querySelector('input[name="layoutMode"]:checked').value;
+        }
+
+        // 1. 繪製背景
+        ctx.fillStyle = COLOR_BG;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. 繪製右上角藍色圓角框
+        ctx.fillStyle = COLOR_BLUE;
+        drawRoundRect(ctx, 690, 105, 280, 100, 20);
+
+        // 3. 繪製底部橫線
+        ctx.fillRect(300, 1220, 780, 12);
+
+        // 4. 繪製底部藍色橫幅
+        ctx.fillRect(0, 1340, 1080, 100);
+
+        // --- 字體設定 ---
+        const serifFont = '"Noto Serif TC", "PMingLiU", "SimSun", serif';
+        const sansFont = '"Arial", sans-serif';
+
+        // 5. 左上角編號 (包含 #)
+        ctx.fillStyle = COLOR_BLUE;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = '110px ' + serifFont;
+        const fullNumText = numText ? '#' + numText : '#';
+        ctx.fillText(fullNumText, 115, 195);
+
+        // 6. 右上角框內字眼 (宋體，字距增加：每個字隔開 2 個空白)
+        ctx.fillStyle = COLOR_WHITE;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '55px ' + serifFont;
+        // 增加字距：從 1 個空白改為 2 個空白，拉開更明顯
+        const spacedTag = tagText.split('').join(' ');
+        ctx.fillText(spacedTag, 830, 155);
+
+        // 7. 正中標題 (支援動態大小與雙行排版)
+		ctx.fillStyle = COLOR_BLUE;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '120px ' + serifFont;
+
+        if (layoutMode === '1') {
+            // 單行模式
+            const spacedTitle = titleText.split('').join(' ');
+            ctx.fillText(spacedTitle, 540, 730);
+        } else {
+            // 雙行模式：自動平分字串
+            const mid = Math.ceil(titleText.length / 2);
+            const line1 = titleText.substring(0, mid).split('').join(' ');
+            const line2 = titleText.substring(mid).split('').join(' ');
+            
+            // 根據字體大小計算行距，確保兩行文字整體依然置中於 Y=730
+            const lineGap = titleFontSize * 1.3; 
+            ctx.fillText(line1, 540, 730 - (lineGap / 2));
+            ctx.fillText(line2, 540, 730 + (lineGap / 2));
+        }
+
+        // 8. 左下年份
+        ctx.fillStyle = COLOR_BLUE;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = '65px ' + sansFont;
+        ctx.fillText(yearText, 110, 1250);
+
+
+        // 9. 底部固定文字 (CNECCC_SECRET_2026)
+        ctx.fillStyle = COLOR_WHITE;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '36px ' + sansFont;
+        ctx.letterSpacing = "5px"; 
+        ctx.fillText('CNECCCSECRET21ST_CENTURY', 540, 1395);
+    }
+
+    // 下載圖片功能
+    function downloadImage() {
+        const link = document.createElement('a');
+        link.download = 'CNECCC_post_' + document.getElementById('numInput').value + '.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+
+    // 初始載入時檢查字數並繪製
+    window.onload = checkTitleLength;
+</script>
+
+</body>
+</html>
